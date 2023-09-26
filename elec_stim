@@ -1,0 +1,475 @@
+// Plugin for processing 2P imaging data of brain slices at LZH-439C, JG-122 or LZH-401 in imagej
+// Format of the file name: 5v 20hz 5s 1.oib for 122; 5v 20hz 5s-001.xml for 439; 5v 20hz 5s 1.oir for 401
+// If there is no selection of "Background ROI selection", you need to presave a background.roi in the input folder
+
+//-------------------------------------------------------//
+// input directory
+#@ File (label = "Input directory", style = "directory") input
+output=input;
+
+// GUI for choosing your processing steps
+labels=newArray("Background ROI selection","Response ROI selection","Pseudocolor images generation","DF/F0 calculation");
+defaults=newArray(false,false,true,true);
+Dialog.create("Choose your steps");
+Dialog.addCheckboxGroup(4,1,labels,defaults);
+Dialog.show();
+f1=Dialog.getCheckbox();
+f2=Dialog.getCheckbox();
+f3=Dialog.getCheckbox();
+f4=Dialog.getCheckbox();
+
+// GUI for setting parameters of image processing
+microscope=newArray("439C","122","401");
+channel=newArray("single","channel 1","channel 2");
+Dialog.create("Parameters for image processing");
+Dialog.addMessage("Enter your settings here: ");
+Dialog.addChoice("Which 2P microscope",microscope,microscope[1]);
+Dialog.addChoice("Which channel",channel,channel[0]);
+Dialog.addNumber("Time for baseline (s):",10);
+Dialog.addNumber("Diameter of background ROI (um):",50);
+Dialog.addNumber("Diameter of response ROI (um):",100);
+Dialog.addNumber("AverageFrame for pseudocolor images (frames):",10);
+Dialog.addSlider("Threshold_Min:", 1, 10000, 50);
+Dialog.addSlider("Threshold_Max:", 1, 10000, 2000);
+Dialog.addNumber("Gaussian Blur_sigma:",1.5);
+Dialog.addNumber("Pseudo_Scale_Min:",0);
+Dialog.addNumber("Pseudo_Scale_Max:",0.25);
+Dialog.addCheckbox("Prorocessing visualization",true);
+Dialog.show();
+Microscope=Dialog.getChoice();
+channel=Dialog.getChoice();
+basalTime=Dialog.getNumber();
+d1=Dialog.getNumber();
+d2=Dialog.getNumber();
+averageFrame=Dialog.getNumber();
+thresholdMin=Dialog.getNumber();
+thresholdMax=Dialog.getNumber();
+sigma=Dialog.getNumber();
+pseudoscaleMin=Dialog.getNumber();
+pseudoscaleMax=Dialog.getNumber();
+f5=Dialog.getCheckbox();
+
+print("microscope="+Microscope);
+print("Time for baseline (s):"+basalTime);
+print("Diameter of background ROI (um):"+d1);
+print("Diameter of response ROI (um):"+d2);
+print("AverageFrame for pseudocolor images (frames):"+averageFrame);
+print("thresholdMin="+thresholdMin);
+print("thresholdMax="+thresholdMax);
+print("sigma="+sigma);
+print("pseudoscaleMin="+pseudoscaleMin);
+print("pseudoscaleMax="+pseudoscaleMax);
+
+//------------------------------------------------------------------------------------------//
+
+roi1="background.roi"; 
+roi2="response.roi"; 
+startTime=getTime(); 
+
+if(f5==false)
+{
+	setBatchMode(true);
+}
+
+list1=getFileList(input);
+list1=Array.sort(list1);
+//--------439--------------------------------------------------------------------------//
+if(Microscope=="439C")
+{
+	suffix="xml";
+	// to get image resolution and frame rate
+	for(i=0,index=0;i<list1.length&&index<1;i++)
+	{
+			input1=input+File.separator+list1[i];
+			list2=getFileList(input1);
+			list2=Array.sort(list2);
+			for(j=0;j<list2.length&&index<1;j++) 
+			{
+				if(endsWith(list2[j],suffix))
+				{
+					b=imageinfo(input1,list2[j]);
+					framePeriod=b[0];
+					imageScale=b[1];
+					if(f1)
+					{
+						backgroundROI(input1,d1,output,list2[j]);
+					}
+					index=index+1;
+				}
+			}
+	}
+	
+	// pseudocolor image generation
+	if(f3)
+	{
+		for(i=0;i<list1.length;i++)
+		{
+			input1=input+File.separator+list1[i];
+			list2=getFileList(input1);
+			list2=Array.sort(list2);
+			for(j=0;j<list2.length;j++) 
+			{
+				if(endsWith(list2[j],suffix))
+				{
+					if(endsWith(list2[j],"Output_001.xml")==false)
+					pseudocolor(input,input1,output,list2[j]);
+				}
+			}
+		}
+	}
+	// Response ROI selection
+	if(f2)
+	{
+		pseudoProjection(input); 
+		maxROI(input,d2,output); 
+	}
+
+	// DF/F0 calculation
+	if(f4)
+	{
+		for(i=0;i<list1.length;i++)
+		{
+			input1=input+File.separator+list1[i];
+			list2=getFileList(input1);
+			list2=Array.sort(list2);
+			for(j=0;j<list2.length;j++) 
+			{
+				if(endsWith(list2[j],suffix))
+				{
+					if(endsWith(list2[j],"Output_001.xml")==false)
+					measureDFoverF0(input,input1,output,list2[j]);
+				}
+			}
+		}
+	}
+}
+
+//--------122---------------------------------------------------------------------------//
+if(Microscope=="122"||Microscope=="401")
+{
+	if(Microscope=="122")
+	{
+		suffix="oib";
+	}
+	if(Microscope=="401")
+	{
+		suffix="oir";
+	}
+	for(i=0,index=0;i<list1.length&&index<1;i++)
+	{
+		if(endsWith(list1[i],suffix))
+		{
+			b=imageinfo(input,list1[i]);
+			framePeriod=b[0];
+			imageScale=b[1];
+			if(f1)
+			{
+				backgroundROI(input,d1,output,list1[i]);
+			}
+			index=index+1;
+		}
+	}
+
+	// pseudocolor image generation
+	if(f3)
+	{
+		for(i=0;i<list1.length;i++)
+		{
+			if(endsWith(list1[i],suffix))
+			{
+				pseudocolor(input,input,output,list1[i]);
+			}
+		}
+	}
+	// Response ROI selection
+	if(f2)
+	{
+		pseudoProjection(input); 
+		maxROI(input,d2,output); 
+	}
+
+	// DF/F0 calculation
+	if(f4)
+	{
+		for(i=0;i<list1.length;i++)
+		{
+			if(endsWith(list1[i],suffix))
+			{
+				measureDFoverF0(input,input,output,list1[i]);
+			}
+		}
+	}
+}
+
+if(f5==false)
+{
+	setBatchMode(false);
+}
+selectWindow("Results");
+run("Close");
+finishTime=getTime(); 
+print("The running script has finished! It takes: "+(finishTime-startTime)/1000+"s!");
+selectWindow("Log");
+saveAs("Text", output+"/"+finishTime+"_parameters.txt");
+
+
+
+// --------functions-------------------------------------------------------------------------------//
+
+function imageinfo(input,file)
+{
+	run("Bio-Formats", "open=["+input+"/"+file+"] autoscale color_mode=Default view=Hyperstack stack_order=XYCZT");
+	a=getImageInfo();
+	if(Microscope=="439C")
+	{
+		framePeriod=parseFloat(substring(a,indexOf(a,"framePeriod")+14,indexOf(a,"framePeriod")+22));
+		imageScale=parseFloat(substring(a,indexOf(a,"Resolution")+12,indexOf(a,"Resolution")+19));
+	}
+	if(Microscope=="122")
+	{
+		framePeriod=parseFloat(substring(a,indexOf(a,"Frame interval")+17,indexOf(a,"Frame interval")+24));
+		imageScale=parseFloat(substring(a,indexOf(a,"Resolution:")+12,indexOf(a,"Resolution:")+19));
+	}
+	if(Microscope=="401")
+	{
+		framePeriod=parseFloat(substring(a,indexOf(a,"speedInformation frameSpeed #2")+33,indexOf(a,"speedInformation frameSpeed #2")+39))/1000;
+		imageScale=parseFloat(substring(a,indexOf(a,"Resolution:")+12,indexOf(a,"Resolution:")+19));
+	}
+	close();
+	print("framePeriod="+framePeriod);
+	print("imageScale="+imageScale);
+	a=newArray(framePeriod,imageScale);
+	return a;
+}
+
+// background roi
+function backgroundROI(input,diameter,output,file)
+{
+	diameter=floor(diameter*imageScale);
+	run("Bio-Formats", "open=["+input+"/"+file+"] autoscale color_mode=Default view=Hyperstack stack_order=XYCZT");
+	run("Z Project...", "projection=[Average Intensity]");
+	width=getWidth();
+	height=getHeight();
+	for(i=0;i<height-diameter+1;i++)
+	{
+		for(j=0;j<width-diameter+1;j++)
+		{
+			//makeRectangle(17*j, 17*i, 17, 17);
+			makeOval(j, i, diameter, diameter);
+			roiManager("Add");
+		}
+	}
+	roiManager("Measure");
+	x=0;y=10000;
+	for(i=0,t=0;i<nResults;i++)
+	{
+		x=getResult("Mean", i);
+		if(y>x)
+		{
+			y=x;t=i;
+		}
+	}
+	a=(t-t%(width-diameter+1))/(width-diameter+1);
+	b=t%(width-diameter+1);
+	roiManager("Show All");
+	roiManager("Delete");
+	makeOval(b, a, diameter, diameter);
+	roiManager("Add");
+	roiManager("Save", output+"/background.roi");
+	roiManager("Delete");
+	close();close();
+	close("Results");
+}
+// calculating peak frame
+function peakFrame(time,framePeriod)
+{
+	width=getWidth();
+	height=getHeight();
+	for (k=1;k<=nSlices;k++)
+	{
+		setSlice(k);
+		makeRectangle(0, 0, width, height);
+		roiManager("Add");
+		roiManager("measure");
+		roiManager("Delete");
+	}
+	x=0;y=0;
+	for(i=floor(basalTime/framePeriod);i<floor((basalTime+time+5)/framePeriod);i++)
+	{
+		x=getResult("Mean", i);
+		if(y<x)
+		{
+			y=x;t=i;
+		}
+	}
+	peakframe=t+1;
+	close("Results");
+	print("peakframe:"+peakframe);
+	return peakframe;
+}
+
+// to produce baseline and peak pseudocolor images
+function pseudocolor(input0,input,output,file)
+{
+	print("Pseudocolor generating: " + input + file);
+	// read voltage, frequency, duration, and trial number of input filename
+	volt=parseFloat(substring(file,0,indexOf(file, "v")));
+	freq=parseInt(substring(file,indexOf(file,"v")+2,indexOf(file,"hz")));
+	time=parseFloat(substring(file,indexOf(file,"hz")+2,indexOf(file,"s")));
+	//time=10;
+	if(Microscope=="439C")
+	{
+		trial=parseInt(substring(file,indexOf(file,"-00")+2,indexOf(file,".xml")));
+	}
+	if(Microscope=="122")
+	{
+		trial=parseInt(substring(file,indexOf(file,"s")+2,indexOf(file,".oib")));
+	}
+	run("Bio-Formats", "open=["+input+"/"+file+"] autoscale color_mode=Default view=Hyperstack stack_order=XYCZT");
+	if(channel=="channel 1")
+	{
+		run("Split Channels");close();//Channel1 of 2-channels
+	}
+	if(channel=="channel 2")
+	{
+		run("Split Channels");//Channel2 of 2-channels
+	}
+	peakframe=peakFrame(time,framePeriod);
+	run("Gaussian Blur...", "sigma="+sigma+" stack");
+	open(input0+"/"+roi1);
+	roiManager("Add");
+	run("DA BG Subraction");
+	roiManager("Delete");
+	run("32-bit");
+	title=getTitle();
+	run("Z Project...", "start="+floor(basalTime/framePeriod)-averageFrame+1+" stop="+floor(basalTime/framePeriod)+" projection=[Average Intensity]");
+	setThreshold(thresholdMin, thresholdMax);
+	run("NaN Background");
+	imageCalculator("Subtract create stack",title,"AVG_"+title);
+	selectWindow("Result of "+title);
+	imageCalculator("Divide create stack", "Result of "+title,"AVG_"+title);
+	selectWindow("Result of Result of "+title);
+	run("Jet");//
+	setMinAndMax(pseudoscaleMin, pseudoscaleMax);//
+	run("8-bit");//
+	run("Gaussian Blur...", "sigma="+sigma+" stack");//
+	saveAs("TIFF", output+"/"+file+"_"+pseudoscaleMin+"_"+pseudoscaleMax+".tif");//
+	run("Z Project...", "start=1 stop="+averageFrame+" projection=[Average Intensity]");
+	//run("Jet");
+	//setMinAndMax(pseudoscaleMin, pseudoscaleMax);
+	//run("8-bit");
+	//run("Gaussian Blur...", "sigma="+sigma);
+	saveAs("BMP", output+"/"+file+"_"+pseudoscaleMin+"_"+pseudoscaleMax+"_baseline.bmp");
+	close();
+	//run("Z Project...", "start="+floor((basalTime+time)/framePeriod)-2+" stop="+floor((basalTime+time)/framePeriod)+averageFrame-3+" projection=[Average Intensity]");
+	run("Z Project...", "start="+peakframe-averageFrame/2+" stop="+peakframe+1+averageFrame/2+" projection=[Average Intensity]");
+	//run("Jet");
+	//setMinAndMax(pseudoscaleMin, pseudoscaleMax);
+	//run("8-bit");
+	//run("Gaussian Blur...", "sigma="+sigma);
+	saveAs("BMP", output+"/"+file+"_"+pseudoscaleMin+"_"+pseudoscaleMax+"_peak.bmp");
+	close();close();close();close();close();
+	print("Saving to: " + output);
+}
+
+// to produce projection of peak images
+function pseudoProjection(input)
+{
+	list=getFileList(input);
+	list=Array.sort(list);
+	for(i=0,peakNum=0;i<list.length;i++)
+	{
+		if(endsWith(list[i],"_peak.bmp"))
+		{
+			open(input+File.separator+list[i]);
+			peakNum=peakNum+1;
+		}
+	}
+	run("Images to Stack", "name=Stack title=[] use");
+	run("Z Project...", "stop="+peakNum+" projection=[Average Intensity]");
+	saveAs("BMP", input+"/peak_AVG.bmp");
+	close();close();
+}
+
+// to produce max roi and save
+function maxROI(input,diameter,output) 
+{
+	diameter=floor(diameter*imageScale);
+	open(input+"/peak_AVG.bmp");
+	width=getWidth();
+	height=getHeight();
+	for(i=0;i<height-diameter+1;i++)
+	{
+		for(j=0;j<width-diameter+1;j++)
+		{
+			//makeRectangle(diameter*j, diameter*i, diameter, diameter);
+			makeOval(j, i, diameter, diameter);
+			roiManager("Add");
+		}
+	}
+	roiManager("Measure");
+	x=0;y=0;
+	for(i=0;i<nResults;i++)
+	{
+		x=getResult("Mean", i);
+		if(y<x)
+		{
+			y=x;t=i;
+		}
+	}
+	a=(t-t%(width-diameter+1))/(width-diameter+1);
+	b=t%(width-diameter+1);
+	roiManager("Show All");
+	roiManager("Delete");
+	makeOval(b, a, diameter, diameter);
+	roiManager("Add");
+	roiManager("Save", output+"/response.roi");
+	roiManager("Delete");
+	close();
+	close("Results");
+}
+
+//calculating DF/F0
+function measureDFoverF0(input0,input,output,file)
+{
+	print("DFoverF0 measuring: " + input + file);
+	run("Bio-Formats", "open=["+input+"/"+file+"] autoscale color_mode=Default view=Hyperstack stack_order=XYCZT");
+	if(channel=="channel 1")
+	{
+		run("Split Channels");close();//Channel1 of 2-channels
+	}
+	if(channel=="channel 2")
+	{
+		run("Split Channels");//Channel2 of 2-channels
+	}
+	open(input0+"/"+roi1);
+	roiManager("Add");
+	run("DA BG Subraction");
+	roiManager("Delete");
+	//run("32-bit");
+	title=getTitle();
+	run("Z Project...", "stop="+floor(basalTime/framePeriod)+" projection=[Average Intensity]");
+	open(input0+"/"+roi2);
+	roiManager("Add");
+	roiManager("Measure");
+	F0=getResult("Mean", 0);
+	run("Clear Results");
+	selectWindow(title);
+	for (k=1;k<=nSlices;k++)
+	{
+		setSlice(k);
+		roiManager("measure");
+	}
+	for (k=0;k<nSlices;k++)
+	{
+		F=getResult("Mean", k);
+		DFoverF0=(F-F0)/F0;
+		setResult("Mean", k, DFoverF0);
+	}
+	saveAs("Results", output+"/"+file+".csv");
+	run("Clear Results");
+	roiManager("Delete");
+	close();close();
+	print("Saving to: " + output);
+}
+

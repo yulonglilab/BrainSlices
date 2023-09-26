@@ -1,0 +1,54 @@
+//=(B2-MIN(B:B))/(MAX(B:B)-MIN(B:B))
+// input directory
+#@ File (label = "Input directory", style = "directory") input0
+list0=getFileList(input0);
+list0=Array.sort(list0);
+startTime=getTime(); 
+setBatchMode(true);
+for(k=0;k<list0.length;k++){
+input=input0+"/"+list0[k];
+output=input;
+roi="spatial.roi"; 
+suffix="tif";
+list=getFileList(input);
+list=Array.sort(list);
+for(i=0;i<list.length;i++){
+	if(endsWith(list[i],suffix)){
+		open(input+"/"+list[i]);
+	}
+}
+num=nSlices;
+run("Concatenate...", "open image1 image2 image3");
+run("Stack to Hyperstack...", "order=xytzc channels=1 slices=3 frames="+num+" display=Color");
+run("Z Project...", "projection=[Average Intensity] all");
+run("Properties...", "channels=1 slices="+num+" frames=1");
+open(input+"/"+roi);
+getSelectionBounds(x, y, w, h);
+x0=x+w/2;
+y0=y+h/2;
+for(frame=1; frame<=num; frame++){
+	Stack.setSlice(frame);
+	meanProfile=newArray(w*2+1);
+	for(i=0;i<8;i++){
+		x1=x0+w*sin(PI/8*i);
+		y1=y0+h*cos(PI/8*i);
+		makeLine(x1, y1, 2*x0-x1, 2*y0-y1);
+		profile = getProfile();
+		for (j=0; j<profile.length; j++){
+		meanProfile[j]=meanProfile[j]+profile[j];
+		}
+	}
+	for (j=0; j<meanProfile.length; j++){
+		setResult(frame, j, meanProfile[j]/i);
+		updateResults;
+	}
+}
+path = output+"/"+"meanProfile.csv";
+saveAs("Results", path);
+close();close("*");
+run("Clear Results");
+close("Results");
+}
+setBatchMode(false);
+finishTime=getTime(); 
+print("The running script has finished! It takes: "+(finishTime-startTime)/1000+"s!");
